@@ -6,16 +6,7 @@
   hosts: photos #my LXC name
   become: yes
   vars:
-    # Timing Configuration
-    immich_processing_start: "{{ immich_processing_start | default('11:00') }}"  # 11:00 AM - Peak mobile backup time
-    immich_processing_end: "{{ immich_processing_end | default('13:00') }}"    # 1:00 PM - 2 hour window
-    photoprism_processing_start: "{{ photoprism_processing_start | default('13:05') }}" # 1:05 PM - Start after Immich
-    photoprism_processing_end: "{{ photoprism_processing_end | default('10:55') }}"    # 10:55 AM - End before Immich
-    
-    # Docker Compose Paths
-    immich_compose_path: "{{ immich_compose_path | default('/opt/stacks/immich') }}"
-    photoprism_compose_path: "{{ photoprism_compose_path | default('/opt/stacks/photoprism') }}"
-    
+
     # Processing Control
     action:  "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism
 
