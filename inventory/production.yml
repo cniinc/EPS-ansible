@@ -2,8 +2,8 @@ all:
   children:
     media_servers:
       hosts:
-        immich:
-          ansible_host: 192.168.1.100  # Your Immich LXC IP
+        photos:
+          ansible_host: 192.168.50.130  # Your Immich LXC IP
           ansible_user: root
           ansible_port: 22
           

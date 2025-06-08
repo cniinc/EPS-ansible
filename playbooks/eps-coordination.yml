@@ -3,7 +3,7 @@
 # Manages processing windows between PhotoPrism (22-23 hours) and Immich (1-2 hours)
 
 - name: "Operation EPS - Manage PhotoPrism/Immich Processing Coordination"
-  hosts: immich_server
+  hosts: photos #my LXC name
   become: yes
   vars:
     # Timing Configuration
@@ -17,7 +17,7 @@
     photoprism_compose_path: "{{ photoprism_compose_path | default('/opt/stacks/photoprism') }}"
     
     # Processing Control
-    action: "schedule"  # Options: schedule, start_immich, stop_immich, start_photoprism, stop_photoprism
+    action:  "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism
 
   tasks:
     # =============================================================================
