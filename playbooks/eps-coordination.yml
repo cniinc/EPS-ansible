@@ -6,6 +6,15 @@
   hosts: photos #my LXC name
   become: yes
   vars:
+    # Docker Compose Paths
+    immich_compose_path: "/opt/stacks/immich"
+    photoprism_compose_path: "/opt/stacks/photoprism"
+    
+    # Timing Configuration  
+    immich_processing_start: "11:00"
+    immich_processing_end: "13:00"
+    photoprism_processing_start: "13:05"
+    photoprism_processing_end: "10:55"
 
     # Processing Control
     action:  "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism
