@@ -16,20 +16,23 @@
     photoprism_processing_start: "13:05"
     photoprism_processing_end: "10:55"
 
+    # Network and API Configuration
+    immich_api_key: "DZ0bD4O3Q6xXRU1gCL89qO9boBdmZ86Xbpj8EXZdR8"  # Replace with your actual API key
+    immich_base_url: "http://192.168.50.130:2283"
+
     # Processing Control
     action:  "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism
 
   tasks:
-
     # =============================================================================
-    # IMMICH PROCESSING CONTROL (FIXED VERSION)
+    # IMMICH PROCESSING CONTROL (WITH NETWORK & AUTHENTICATION)
     # =============================================================================
     
     - name: "Start Immich Processing Window"
       block:
         - name: "Enable Immich background jobs via API"
           ansible.builtin.uri:
-            url: "http://localhost:2283/api/system-config"
+            url: "{{ immich_base_url }}/api/system-config"
             method: PUT
             body_format: json
             body:
@@ -40,13 +43,18 @@
                   concurrency: 4
                 metadataExtraction:
                   concurrency: 4
+                videoConversion:
+                  concurrency: 2
+                smartSearch:
+                  concurrency: 2
             headers:
               Content-Type: "application/json"
+              X-API-Key: "{{ immich_api_key }}"
           register: immich_start_result
           
         - name: "Log Immich processing start"
           ansible.builtin.debug:
-            msg: "✅ Immich processing window started at {{ ansible_date_time.time }}"
+            msg: "✅ Immich processing window started at {{ ansible_date_time.time }} - High concurrency enabled"
             
       when: action == "start_immich"
       
@@ -54,7 +62,7 @@
       block:
         - name: "Set Immich to low processing mode via API"
           ansible.builtin.uri:
-            url: "http://localhost:2283/api/system-config"
+            url: "{{ immich_base_url }}/api/system-config"
             method: PUT
             body_format: json
             body:
@@ -65,13 +73,18 @@
                   concurrency: 1
                 metadataExtraction:
                   concurrency: 1
+                videoConversion:
+                  concurrency: 1
+                smartSearch:
+                  concurrency: 1
             headers:
               Content-Type: "application/json"
+              X-API-Key: "{{ immich_api_key }}"
           register: immich_low_result
           
         - name: "Pause Immich background jobs via API"
           ansible.builtin.uri:
-            url: "http://localhost:2283/api/system-config"
+            url: "{{ immich_base_url }}/api/system-config"
             method: PUT
             body_format: json
             body:
@@ -80,11 +93,12 @@
                   concurrency: 0
             headers:
               Content-Type: "application/json"
+              X-API-Key: "{{ immich_api_key }}"
           register: immich_pause_result
           
         - name: "Log Immich processing stop"
           ansible.builtin.debug:
-            msg: "🔄 Immich processing window ended at {{ ansible_date_time.time }}"
+            msg: "🔄 Immich processing window ended at {{ ansible_date_time.time }} - Jobs paused"
             
       when: action == "stop_immich"
 
@@ -134,18 +148,29 @@
             
       when: action == "stop_photoprism"
 
-# =============================================================================
-    # MONITORING AND STATUS (CORRECTED VERSION)ss
+    # =============================================================================
+    # MONITORING AND STATUS (WITH NETWORK & AUTHENTICATION)
     # =============================================================================
     
     - name: "Check Processing Status"
       block:
         - name: "Get Immich server status via API"
           ansible.builtin.uri:
-            url: "http://localhost:2283/api/server-info"
+            url: "{{ immich_base_url }}/api/server-info"
             method: GET
+            headers:
+              X-API-Key: "{{ immich_api_key }}"
             timeout: 10
           register: immich_status
+          ignore_errors: yes
+          
+        - name: "Get Immich job queue status"
+          ansible.builtin.uri:
+            url: "{{ immich_base_url }}/api/jobs"
+            method: GET
+            headers:
+              X-API-Key: "{{ immich_api_key }}"
+          register: immich_jobs_status
           ignore_errors: yes
           
         - name: "Alternative Immich status check via container"
@@ -165,14 +190,18 @@
           ansible.builtin.debug:
             msg: |
               📊 Current Processing Status:
-              Immich API: {{ 'Online' if immich_status.status == 200 else 'API Unreachable' }}
-              Immich Container: {{ 'Running' if 'Up' in immich_container_status.stdout else 'Stopped' }}
-              PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
-              Time: {{ ansible_date_time.time }}
+              
+              🎯 Immich API: {{ 'Online' if immich_status.status == 200 else 'Unreachable (' + (immich_status.status|string) + ')' if immich_status.status is defined else 'Connection Failed' }}
+              🎯 Immich Container: {{ 'Running' if 'Up' in immich_container_status.stdout else 'Stopped' }}
+              🎯 Immich Jobs: {{ 'Available' if immich_jobs_status.status == 200 else 'Unavailable' }}
+              📸 PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
+              
+              ⏰ Time: {{ ansible_date_time.time }}
               
       when: action == "status"
+
     # =============================================================================
-    # CRON SCHEDULE MANAGEMENT
+    # CRON SCHEDULE MANAGEMENT (USING SEMAPHORE)
     # =============================================================================
     
     - name: "Install Processing Coordination Cron Jobs"
@@ -185,13 +214,35 @@
             group: root
             mode: '0755'
             
+        - name: "Create Semaphore API coordination script"
+          ansible.builtin.copy:
+            dest: /opt/eps-coordination/run-semaphore-task.sh
+            content: |
+              #!/bin/bash
+              # Semaphore API Task Trigger Script
+              # Usage: ./run-semaphore-task.sh <action>
+              
+              ACTION=$1
+              SEMAPHORE_URL="http://192.168.50.102:3000"
+              PROJECT_ID="2"  # Your project ID
+              TEMPLATE_ID="2"  # Your EPS Coordination template ID
+              
+              # You may need to add authentication here if required
+              curl -X POST \
+                "${SEMAPHORE_URL}/api/project/${PROJECT_ID}/tasks" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "template_id": "'${TEMPLATE_ID}'",
+                  "environment": {"action": "'${ACTION}'"}
+                }'
+            mode: '0755'
+            
         - name: "Create Immich start script"
           ansible.builtin.copy:
             dest: /opt/eps-coordination/start-immich.sh
             content: |
               #!/bin/bash
-              cd /opt/ansible-playbooks
-              ansible-playbook eps-coordination.yml -e "action=start_immich" --inventory inventory.yml
+              /opt/eps-coordination/run-semaphore-task.sh start_immich
             mode: '0755'
             
         - name: "Create Immich stop script"
@@ -199,8 +250,7 @@
             dest: /opt/eps-coordination/stop-immich.sh
             content: |
               #!/bin/bash
-              cd /opt/ansible-playbooks
-              ansible-playbook eps-coordination.yml -e "action=stop_immich" --inventory inventory.yml
+              /opt/eps-coordination/run-semaphore-task.sh stop_immich
             mode: '0755'
             
         - name: "Create PhotoPrism start script"
@@ -208,8 +258,7 @@
             dest: /opt/eps-coordination/start-photoprism.sh
             content: |
               #!/bin/bash
-              cd /opt/ansible-playbooks
-              ansible-playbook eps-coordination.yml -e "action=start_photoprism" --inventory inventory.yml
+              /opt/eps-coordination/run-semaphore-task.sh start_photoprism
             mode: '0755'
             
         - name: "Create PhotoPrism stop script"
@@ -217,8 +266,7 @@
             dest: /opt/eps-coordination/stop-photoprism.sh
             content: |
               #!/bin/bash
-              cd /opt/ansible-playbooks
-              ansible-playbook eps-coordination.yml -e "action=stop_photoprism" --inventory inventory.yml
+              /opt/eps-coordination/run-semaphore-task.sh stop_photoprism
             mode: '0755'
             
         - name: "Schedule Immich processing window start"
@@ -260,6 +308,12 @@
               📱 Immich Window: {{ immich_processing_start }} - {{ immich_processing_end }} (Mobile backup priority)
               🎯 PhotoPrism Window: {{ photoprism_processing_start }} - {{ photoprism_processing_end }} (AI processing)
               
+              📋 Cron Schedule:
+              • 11:00 AM - Start Immich processing (high concurrency)
+              • 1:00 PM - Stop Immich processing (pause jobs)
+              • 1:05 PM - Start PhotoPrism processing (indexing + AI)
+              • 10:55 AM - Stop PhotoPrism processing (graceful shutdown)
+              
       when: action == "schedule"
 
     # =============================================================================
@@ -295,18 +349,32 @@
 # 
 # Processing Windows:
 # ├── Immich: 11:00 AM - 1:00 PM (2 hours)
-# │   ├── High concurrency mobile backup processing
+# │   ├── High concurrency mobile backup processing (4 workers)
 # │   ├── Peak mobile usage time coverage
-# │   └── Quick thumbnail generation
+# │   ├── Quick thumbnail generation
+# │   └── Video conversion (2 workers)
 # └── PhotoPrism: 1:05 PM - 10:55 AM (22h 50m)
 #     ├── Intensive AI processing
-#     ├── Facial recognition and object detection
+#     ├── Facial recognition and object detection  
 #     ├── Metadata generation and indexing
-#     └── Advanced search index building
+#     ├── Advanced search index building
+#     └── Photo optimization
+#
+# Network Configuration:
+# ├── Semaphore: 192.168.50.102 (orchestrator)
+# ├── Photos LXC: 192.168.50.130 (Immich + PhotoPrism)
+# └── API Calls: Cross-container via IP addresses
 #
 # Usage Examples:
-# ├── Deploy schedule: ansible-playbook eps-coordination.yml -e "action=schedule"
-# ├── Manual start Immich: ansible-playbook eps-coordination.yml -e "action=start_immich"
-# ├── Check status: ansible-playbook eps-coordination.yml -e "action=status"
-# └── Remove coordination: ansible-playbook eps-coordination.yml -e "action=cleanup"
+# ├── Check status: action="status"
+# ├── Test Immich start: action="start_immich"
+# ├── Test Immich stop: action="stop_immich"
+# ├── Deploy schedule: action="schedule"
+# └── Remove coordination: action="cleanup"
+#
+# Prerequisites:
+# ├── Immich API key configured in vars
+# ├── Network connectivity between containers
+# ├── Docker compose services running
+# └── Semaphore template configured
 # =============================================================================
