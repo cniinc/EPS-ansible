@@ -17,7 +17,7 @@
     photoprism_processing_end: "10:55"
 
     # Network and API Configuration
-    immich_api_key: "DZ0bD4O3Q6xXRU1gCL89qO9boBdmZ86Xbpj8EXZdR8"  # Replace with your actual API key
+    immich_api_key: "YOUR_ACTUAL_API_KEY_HERE"  # Replace with your actual API key
     immich_base_url: "http://192.168.50.130:2283"
 
     # Processing Control
@@ -201,118 +201,43 @@
       when: action == "status"
 
     # =============================================================================
-    # CRON SCHEDULE MANAGEMENT (USING SEMAPHORE)
+    # SCHEDULE INFORMATION (USE SEMAPHORE SCHEDULES INSTEAD)
     # =============================================================================
     
-    - name: "Install Processing Coordination Cron Jobs"
+    - name: "Display Schedule Instructions"
       block:
-        - name: "Create EPS coordination script directory"
-          ansible.builtin.file:
-            path: /opt/eps-coordination
-            state: directory
-            owner: root
-            group: root
-            mode: '0755'
-            
-        - name: "Create Semaphore API coordination script"
-          ansible.builtin.copy:
-            dest: /opt/eps-coordination/run-semaphore-task.sh
-            content: |
-              #!/bin/bash
-              # Semaphore API Task Trigger Script
-              # Usage: ./run-semaphore-task.sh <action>
-              
-              ACTION=$1
-              SEMAPHORE_URL="http://192.168.50.102:3000"
-              PROJECT_ID="2"  # Your project ID
-              TEMPLATE_ID="2"  # Your EPS Coordination template ID
-              
-              # You may need to add authentication here if required
-              curl -X POST \
-                "${SEMAPHORE_URL}/api/project/${PROJECT_ID}/tasks" \
-                -H "Content-Type: application/json" \
-                -d '{
-                  "template_id": "'${TEMPLATE_ID}'",
-                  "environment": {"action": "'${ACTION}'"}
-                }'
-            mode: '0755'
-            
-        - name: "Create Immich start script"
-          ansible.builtin.copy:
-            dest: /opt/eps-coordination/start-immich.sh
-            content: |
-              #!/bin/bash
-              /opt/eps-coordination/run-semaphore-task.sh start_immich
-            mode: '0755'
-            
-        - name: "Create Immich stop script"
-          ansible.builtin.copy:
-            dest: /opt/eps-coordination/stop-immich.sh
-            content: |
-              #!/bin/bash
-              /opt/eps-coordination/run-semaphore-task.sh stop_immich
-            mode: '0755'
-            
-        - name: "Create PhotoPrism start script"
-          ansible.builtin.copy:
-            dest: /opt/eps-coordination/start-photoprism.sh
-            content: |
-              #!/bin/bash
-              /opt/eps-coordination/run-semaphore-task.sh start_photoprism
-            mode: '0755'
-            
-        - name: "Create PhotoPrism stop script"
-          ansible.builtin.copy:
-            dest: /opt/eps-coordination/stop-photoprism.sh
-            content: |
-              #!/bin/bash
-              /opt/eps-coordination/run-semaphore-task.sh stop_photoprism
-            mode: '0755'
-            
-        - name: "Schedule Immich processing window start"
-          ansible.builtin.cron:
-            name: "EPS - Start Immich Processing"
-            minute: "0"
-            hour: "11"
-            job: "/opt/eps-coordination/start-immich.sh"
-            user: root
-            
-        - name: "Schedule Immich processing window end"
-          ansible.builtin.cron:
-            name: "EPS - Stop Immich Processing"
-            minute: "0"
-            hour: "13"
-            job: "/opt/eps-coordination/stop-immich.sh"
-            user: root
-            
-        - name: "Schedule PhotoPrism processing window start"
-          ansible.builtin.cron:
-            name: "EPS - Start PhotoPrism Processing"
-            minute: "5"
-            hour: "13"
-            job: "/opt/eps-coordination/start-photoprism.sh"
-            user: root
-            
-        - name: "Schedule PhotoPrism processing window end"
-          ansible.builtin.cron:
-            name: "EPS - Stop PhotoPrism Processing"
-            minute: "55"
-            hour: "10"
-            job: "/opt/eps-coordination/stop-photoprism.sh"
-            user: root
-            
-        - name: "Log cron installation"
+        - name: "Show Semaphore schedule setup instructions"
           ansible.builtin.debug:
             msg: |
-              ⏰ EPS Processing Schedule Installed:
-              📱 Immich Window: {{ immich_processing_start }} - {{ immich_processing_end }} (Mobile backup priority)
-              🎯 PhotoPrism Window: {{ photoprism_processing_start }} - {{ photoprism_processing_end }} (AI processing)
+              📅 EPS Processing Schedule Setup Instructions:
               
-              📋 Cron Schedule:
-              • 11:00 AM - Start Immich processing (high concurrency)
-              • 1:00 PM - Stop Immich processing (pause jobs)
-              • 1:05 PM - Start PhotoPrism processing (indexing + AI)
-              • 10:55 AM - Stop PhotoPrism processing (graceful shutdown)
+              Create these 4 schedules in Semaphore Web Interface:
+              
+              🟢 Schedule 1: "EPS Start Immich"
+              ├── Template: EPS Coordination
+              ├── Cron: 0 11 * * * (Daily at 11:00 AM)
+              └── Variables: action = start_immich
+              
+              🔴 Schedule 2: "EPS Stop Immich"
+              ├── Template: EPS Coordination  
+              ├── Cron: 0 13 * * * (Daily at 1:00 PM)
+              └── Variables: action = stop_immich
+              
+              🟢 Schedule 3: "EPS Start PhotoPrism"
+              ├── Template: EPS Coordination
+              ├── Cron: 5 13 * * * (Daily at 1:05 PM)
+              └── Variables: action = start_photoprism
+              
+              🔴 Schedule 4: "EPS Stop PhotoPrism"
+              ├── Template: EPS Coordination
+              ├── Cron: 55 10 * * * (Daily at 10:55 AM)
+              └── Variables: action = stop_photoprism
+              
+              ⚡ Processing Windows:
+              📱 Immich: {{ immich_processing_start }} - {{ immich_processing_end }} (2 hours)
+              🎯 PhotoPrism: {{ photoprism_processing_start }} - {{ photoprism_processing_end }} (22h 50m)
+              
+              ✅ All scheduling stays within Semaphore - no external cron jobs!
               
       when: action == "schedule"
 
@@ -322,25 +247,22 @@
     
     - name: "Remove Processing Coordination"
       block:
-        - name: "Remove all EPS cron jobs"
-          ansible.builtin.cron:
-            name: "{{ item }}"
-            state: absent
-          loop:
-            - "EPS - Start Immich Processing"
-            - "EPS - Stop Immich Processing"
-            - "EPS - Start PhotoPrism Processing"
-            - "EPS - Stop PhotoPrism Processing"
-            
-        - name: "Remove coordination scripts"
-          ansible.builtin.file:
-            path: /opt/eps-coordination
-            state: absent
-            
-        - name: "Log cleanup completion"
+        - name: "Display cleanup instructions"
           ansible.builtin.debug:
-            msg: "🧹 EPS processing coordination removed"
-            
+            msg: |
+              🧹 EPS Coordination Cleanup Instructions:
+              
+              To fully remove EPS coordination:
+              1. Delete the 4 Semaphore schedules from the web interface:
+                 • EPS Start Immich
+                 • EPS Stop Immich  
+                 • EPS Start PhotoPrism
+                 • EPS Stop PhotoPrism
+              
+              2. Optionally delete this EPS Coordination template
+              
+              ✅ No external cron jobs or scripts to clean up!
+              
       when: action == "cleanup"
 
 # =============================================================================
