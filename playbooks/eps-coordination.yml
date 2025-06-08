@@ -1,0 +1,279 @@
+---
+# Operation EPS - PhotoPrism/Immich Timing Coordination Playbook
+# Manages processing windows between PhotoPrism (22-23 hours) and Immich (1-2 hours)
+
+- name: "Operation EPS - Manage PhotoPrism/Immich Processing Coordination"
+  hosts: immich_server
+  become: yes
+  vars:
+    # Timing Configuration
+    immich_processing_start: "{{ immich_processing_start | default('11:00') }}"  # 11:00 AM - Peak mobile backup time
+    immich_processing_end: "{{ immich_processing_end | default('13:00') }}"    # 1:00 PM - 2 hour window
+    photoprism_processing_start: "{{ photoprism_processing_start | default('13:05') }}" # 1:05 PM - Start after Immich
+    photoprism_processing_end: "{{ photoprism_processing_end | default('10:55') }}"    # 10:55 AM - End before Immich
+    
+    # Docker Compose Paths
+    immich_compose_path: "{{ immich_compose_path | default('/opt/stacks/immich') }}"
+    photoprism_compose_path: "{{ photoprism_compose_path | default('/opt/stacks/photoprism') }}"
+    
+    # Processing Control
+    action: "schedule"  # Options: schedule, start_immich, stop_immich, start_photoprism, stop_photoprism
+
+  tasks:
+    # =============================================================================
+    # IMMICH PROCESSING CONTROL
+    # =============================================================================
+    
+    - name: "Start Immich Processing Window"
+      block:
+        - name: "Enable Immich background jobs"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose exec -T immich-server immich-cli jobs start all
+          register: immich_start_result
+          
+        - name: "Set Immich to high processing mode"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose exec -T immich-server immich-cli config set JOB_CONCURRENCY 4
+          register: immich_config_result
+          
+        - name: "Log Immich processing start"
+          ansible.builtin.debug:
+            msg: "✅ Immich processing window started at {{ ansible_date_time.time }}"
+            
+      when: action == "start_immich"
+      
+    - name: "Stop Immich Processing Window"
+      block:
+        - name: "Set Immich to low processing mode"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose exec -T immich-server immich-cli config set JOB_CONCURRENCY 1
+          register: immich_low_result
+          
+        - name: "Pause Immich background jobs"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose exec -T immich-server immich-cli jobs pause all
+          register: immich_pause_result
+          
+        - name: "Log Immich processing stop"
+          ansible.builtin.debug:
+            msg: "🔄 Immich processing window ended at {{ ansible_date_time.time }}"
+            
+      when: action == "stop_immich"
+
+    # =============================================================================
+    # PHOTOPRISM PROCESSING CONTROL
+    # =============================================================================
+    
+    - name: "Start PhotoPrism Processing Window"
+      block:
+        - name: "Enable PhotoPrism indexing"
+          ansible.builtin.shell: |
+            cd {{ photoprism_compose_path }}
+            docker compose exec -T photoprism photoprism index --cleanup
+          register: photoprism_index_result
+          async: 3600  # Allow up to 1 hour for indexing
+          poll: 0      # Don't wait for completion
+          
+        - name: "Start PhotoPrism background tasks"
+          ansible.builtin.shell: |
+            cd {{ photoprism_compose_path }}
+            docker compose exec -T photoprism photoprism optimize
+          register: photoprism_optimize_result
+          async: 1800  # Allow 30 minutes for optimization
+          poll: 0
+          
+        - name: "Log PhotoPrism processing start"
+          ansible.builtin.debug:
+            msg: "🎯 PhotoPrism processing window started at {{ ansible_date_time.time }}"
+            
+      when: action == "start_photoprism"
+      
+    - name: "Stop PhotoPrism Processing Window"
+      block:
+        - name: "Send graceful shutdown signal to PhotoPrism processes"
+          ansible.builtin.shell: |
+            cd {{ photoprism_compose_path }}
+            docker compose exec -T photoprism pkill -TERM photoprism || true
+          register: photoprism_stop_result
+          
+        - name: "Wait for PhotoPrism processes to complete current tasks"
+          ansible.builtin.pause:
+            seconds: 30
+            
+        - name: "Log PhotoPrism processing stop"
+          ansible.builtin.debug:
+            msg: "⏸️ PhotoPrism processing window ended at {{ ansible_date_time.time }}"
+            
+      when: action == "stop_photoprism"
+
+    # =============================================================================
+    # MONITORING AND STATUS
+    # =============================================================================
+    
+    - name: "Check Processing Status"
+      block:
+        - name: "Get Immich job status"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose exec -T immich-server immich-cli jobs status
+          register: immich_status
+          
+        - name: "Get PhotoPrism status"
+          ansible.builtin.shell: |
+            cd {{ photoprism_compose_path }}
+            docker compose ps photoprism
+          register: photoprism_status
+          
+        - name: "Display current processing status"
+          ansible.builtin.debug:
+            msg: |
+              📊 Current Processing Status:
+              Immich: {{ immich_status.stdout | default('Status unavailable') }}
+              PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
+              Time: {{ ansible_date_time.time }}
+              
+      when: action == "status"
+
+    # =============================================================================
+    # CRON SCHEDULE MANAGEMENT
+    # =============================================================================
+    
+    - name: "Install Processing Coordination Cron Jobs"
+      block:
+        - name: "Create EPS coordination script directory"
+          ansible.builtin.file:
+            path: /opt/eps-coordination
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+            
+        - name: "Create Immich start script"
+          ansible.builtin.copy:
+            dest: /opt/eps-coordination/start-immich.sh
+            content: |
+              #!/bin/bash
+              cd /opt/ansible-playbooks
+              ansible-playbook eps-coordination.yml -e "action=start_immich" --inventory inventory.yml
+            mode: '0755'
+            
+        - name: "Create Immich stop script"
+          ansible.builtin.copy:
+            dest: /opt/eps-coordination/stop-immich.sh
+            content: |
+              #!/bin/bash
+              cd /opt/ansible-playbooks
+              ansible-playbook eps-coordination.yml -e "action=stop_immich" --inventory inventory.yml
+            mode: '0755'
+            
+        - name: "Create PhotoPrism start script"
+          ansible.builtin.copy:
+            dest: /opt/eps-coordination/start-photoprism.sh
+            content: |
+              #!/bin/bash
+              cd /opt/ansible-playbooks
+              ansible-playbook eps-coordination.yml -e "action=start_photoprism" --inventory inventory.yml
+            mode: '0755'
+            
+        - name: "Create PhotoPrism stop script"
+          ansible.builtin.copy:
+            dest: /opt/eps-coordination/stop-photoprism.sh
+            content: |
+              #!/bin/bash
+              cd /opt/ansible-playbooks
+              ansible-playbook eps-coordination.yml -e "action=stop_photoprism" --inventory inventory.yml
+            mode: '0755'
+            
+        - name: "Schedule Immich processing window start"
+          ansible.builtin.cron:
+            name: "EPS - Start Immich Processing"
+            minute: "0"
+            hour: "11"
+            job: "/opt/eps-coordination/start-immich.sh"
+            user: root
+            
+        - name: "Schedule Immich processing window end"
+          ansible.builtin.cron:
+            name: "EPS - Stop Immich Processing"
+            minute: "0"
+            hour: "13"
+            job: "/opt/eps-coordination/stop-immich.sh"
+            user: root
+            
+        - name: "Schedule PhotoPrism processing window start"
+          ansible.builtin.cron:
+            name: "EPS - Start PhotoPrism Processing"
+            minute: "5"
+            hour: "13"
+            job: "/opt/eps-coordination/start-photoprism.sh"
+            user: root
+            
+        - name: "Schedule PhotoPrism processing window end"
+          ansible.builtin.cron:
+            name: "EPS - Stop PhotoPrism Processing"
+            minute: "55"
+            hour: "10"
+            job: "/opt/eps-coordination/stop-photoprism.sh"
+            user: root
+            
+        - name: "Log cron installation"
+          ansible.builtin.debug:
+            msg: |
+              ⏰ EPS Processing Schedule Installed:
+              📱 Immich Window: {{ immich_processing_start }} - {{ immich_processing_end }} (Mobile backup priority)
+              🎯 PhotoPrism Window: {{ photoprism_processing_start }} - {{ photoprism_processing_end }} (AI processing)
+              
+      when: action == "schedule"
+
+    # =============================================================================
+    # CLEANUP AND MAINTENANCE
+    # =============================================================================
+    
+    - name: "Remove Processing Coordination"
+      block:
+        - name: "Remove all EPS cron jobs"
+          ansible.builtin.cron:
+            name: "{{ item }}"
+            state: absent
+          loop:
+            - "EPS - Start Immich Processing"
+            - "EPS - Stop Immich Processing"
+            - "EPS - Start PhotoPrism Processing"
+            - "EPS - Stop PhotoPrism Processing"
+            
+        - name: "Remove coordination scripts"
+          ansible.builtin.file:
+            path: /opt/eps-coordination
+            state: absent
+            
+        - name: "Log cleanup completion"
+          ansible.builtin.debug:
+            msg: "🧹 EPS processing coordination removed"
+            
+      when: action == "cleanup"
+
+# =============================================================================
+# OPERATION EPS COORDINATION SUMMARY
+# =============================================================================
+# 
+# Processing Windows:
+# ├── Immich: 11:00 AM - 1:00 PM (2 hours)
+# │   ├── High concurrency mobile backup processing
+# │   ├── Peak mobile usage time coverage
+# │   └── Quick thumbnail generation
+# └── PhotoPrism: 1:05 PM - 10:55 AM (22h 50m)
+#     ├── Intensive AI processing
+#     ├── Facial recognition and object detection
+#     ├── Metadata generation and indexing
+#     └── Advanced search index building
+#
+# Usage Examples:
+# ├── Deploy schedule: ansible-playbook eps-coordination.yml -e "action=schedule"
+# ├── Manual start Immich: ansible-playbook eps-coordination.yml -e "action=start_immich"
+# ├── Check status: ansible-playbook eps-coordination.yml -e "action=status"
+# └── Remove coordination: ansible-playbook eps-coordination.yml -e "action=cleanup"
+# =============================================================================

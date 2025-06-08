@@ -1,0 +1,18 @@
+all:
+  children:
+    media_servers:
+      hosts:
+        immich:
+          ansible_host: 192.168.1.100  # Your Immich LXC IP
+          ansible_user: root
+          ansible_port: 22
+          
+          # EPS Specific Variables
+          immich_compose_path: "/opt/stacks/immich"
+          photoprism_compose_path: "/opt/stacks/photoprism"
+          
+          # Timing Configuration
+          immich_processing_start: "11:00"
+          immich_processing_end: "13:00"
+          photoprism_processing_start: "13:05"
+          photoprism_processing_end: "10:55"
