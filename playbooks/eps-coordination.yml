@@ -25,28 +25,25 @@
 
   tasks:
     # =============================================================================
-    # IMMICH PROCESSING CONTROL (WITH NETWORK & AUTHENTICATION)
+    # IMMICH PROCESSING CONTROL (USING JOB ENDPOINTS)
     # =============================================================================
     
     - name: "Start Immich Processing Window"
       block:
-        - name: "Enable Immich background jobs via API"
+        - name: "Get current Immich system config"
+          ansible.builtin.uri:
+            url: "{{ immich_base_url }}/api/system-config"
+            method: GET
+            headers:
+              X-API-Key: "{{ immich_api_key }}"
+          register: immich_current_config
+          
+        - name: "Update Immich to high processing mode"
           ansible.builtin.uri:
             url: "{{ immich_base_url }}/api/system-config"
             method: PUT
             body_format: json
-            body:
-              job:
-                backgroundTask:
-                  concurrency: 4
-                thumbnailGeneration:
-                  concurrency: 4
-                metadataExtraction:
-                  concurrency: 4
-                videoConversion:
-                  concurrency: 2
-                smartSearch:
-                  concurrency: 2
+            body: "{{ immich_current_config.json | combine({'job': {'backgroundTask': {'concurrency': 4}, 'thumbnailGeneration': {'concurrency': 4}, 'metadataExtraction': {'concurrency': 4}, 'videoConversion': {'concurrency': 2}, 'smartSearch': {'concurrency': 2}}}, recursive=True) }}"
             headers:
               Content-Type: "application/json"
               X-API-Key: "{{ immich_api_key }}"
@@ -60,45 +57,28 @@
       
     - name: "Stop Immich Processing Window"
       block:
-        - name: "Set Immich to low processing mode via API"
+        - name: "Get current Immich system config"
+          ansible.builtin.uri:
+            url: "{{ immich_base_url }}/api/system-config"
+            method: GET
+            headers:
+              X-API-Key: "{{ immich_api_key }}"
+          register: immich_current_config
+          
+        - name: "Update Immich to low processing mode"
           ansible.builtin.uri:
             url: "{{ immich_base_url }}/api/system-config"
             method: PUT
             body_format: json
-            body:
-              job:
-                backgroundTask:
-                  concurrency: 1
-                thumbnailGeneration:
-                  concurrency: 1
-                metadataExtraction:
-                  concurrency: 1
-                videoConversion:
-                  concurrency: 1
-                smartSearch:
-                  concurrency: 1
+            body: "{{ immich_current_config.json | combine({'job': {'backgroundTask': {'concurrency': 1}, 'thumbnailGeneration': {'concurrency': 1}, 'metadataExtraction': {'concurrency': 1}, 'videoConversion': {'concurrency': 1}, 'smartSearch': {'concurrency': 1}}}, recursive=True) }}"
             headers:
               Content-Type: "application/json"
               X-API-Key: "{{ immich_api_key }}"
           register: immich_low_result
           
-        - name: "Pause Immich background jobs via API"
-          ansible.builtin.uri:
-            url: "{{ immich_base_url }}/api/system-config"
-            method: PUT
-            body_format: json
-            body:
-              job:
-                backgroundTask:
-                  concurrency: 0
-            headers:
-              Content-Type: "application/json"
-              X-API-Key: "{{ immich_api_key }}"
-          register: immich_pause_result
-          
         - name: "Log Immich processing stop"
           ansible.builtin.debug:
-            msg: "🔄 Immich processing window ended at {{ ansible_date_time.time }} - Jobs paused"
+            msg: "🔄 Immich processing window ended at {{ ansible_date_time.time }} - Low concurrency enabled"
             
       when: action == "stop_immich"
 
@@ -149,20 +129,12 @@
       when: action == "stop_photoprism"
 
     # =============================================================================
-    # MONITORING AND STATUS (SIMPLIFIED AND FIXED)
+    # MONITORING AND STATUS (SIMPLIFIED - NO PING)
     # =============================================================================
     
     - name: "Check Processing Status"
       block:
-        - name: "Test Immich API connectivity"
-          ansible.builtin.uri:
-            url: "{{ immich_base_url }}/api/server-info/ping"
-            method: GET
-            timeout: 10
-          register: immich_ping
-          ignore_errors: yes
-          
-        - name: "Get Immich system config (requires auth)"
+        - name: "Get Immich system config (tests API auth and connectivity)"
           ansible.builtin.uri:
             url: "{{ immich_base_url }}/api/system-config"
             method: GET
@@ -191,8 +163,7 @@
             msg: |
               📊 Current Processing Status:
               
-              🎯 Immich Ping: {{ 'Success' if immich_ping.status is defined and immich_ping.status == 200 else 'Failed' }}
-              🎯 Immich API Auth: {{ 'Valid' if immich_config.status is defined and immich_config.status == 200 else 'Invalid API Key' }}
+              🎯 Immich API: {{ 'Online & Authenticated' if immich_config.status is defined and immich_config.status == 200 else 'Offline or Auth Failed' }}
               🎯 Immich Container: {{ 'Running' if immich_container_status.stdout is defined and 'Up' in immich_container_status.stdout else 'Unknown' }}
               📸 PhotoPrism Container: {{ 'Running' if photoprism_status.stdout is defined and 'Up' in photoprism_status.stdout else 'Unknown' }}
               
