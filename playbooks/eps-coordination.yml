@@ -135,7 +135,7 @@
       when: action == "stop_photoprism"
 
 # =============================================================================
-    # MONITORING AND STATUS (CORRECTED VERSION)
+    # MONITORING AND STATUS (CORRECTED VERSION)ss
     # =============================================================================
     
     - name: "Check Processing Status"
