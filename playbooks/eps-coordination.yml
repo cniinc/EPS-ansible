@@ -134,17 +134,25 @@
             
       when: action == "stop_photoprism"
 
-    # =============================================================================
-    # MONITORING AND STATUS (FIXED VERSION)
+# =============================================================================
+    # MONITORING AND STATUS (CORRECTED VERSION)
     # =============================================================================
     
     - name: "Check Processing Status"
       block:
         - name: "Get Immich server status via API"
           ansible.builtin.uri:
-            url: "http://localhost:2283/api/server-info/ping"
+            url: "http://localhost:2283/api/server-info"
             method: GET
+            timeout: 10
           register: immich_status
+          ignore_errors: yes
+          
+        - name: "Alternative Immich status check via container"
+          ansible.builtin.shell: |
+            cd {{ immich_compose_path }}
+            docker compose ps immich-server --format "table {{.Status}}"
+          register: immich_container_status
           ignore_errors: yes
           
         - name: "Get PhotoPrism status"
@@ -157,9 +165,12 @@
           ansible.builtin.debug:
             msg: |
               📊 Current Processing Status:
-              Immich: {{ 'Online' if immich_status.status == 200 else 'Offline' }}
+              Immich API: {{ 'Online' if immich_status.status == 200 else 'API Unreachable' }}
+              Immich Container: {{ 'Running' if 'Up' in immich_container_status.stdout else 'Stopped' }}
               PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
               Time: {{ ansible_date_time.time }}
+              
+      when: action == "status"
     # =============================================================================
     # CRON SCHEDULE MANAGEMENT
     # =============================================================================
