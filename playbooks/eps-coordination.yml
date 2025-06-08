@@ -20,23 +20,29 @@
     action:  "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism
 
   tasks:
+
     # =============================================================================
-    # IMMICH PROCESSING CONTROL
+    # IMMICH PROCESSING CONTROL (FIXED VERSION)
     # =============================================================================
     
     - name: "Start Immich Processing Window"
       block:
-        - name: "Enable Immich background jobs"
-          ansible.builtin.shell: |
-            cd {{ immich_compose_path }}
-            docker compose exec -T immich-server immich-cli jobs start all
+        - name: "Enable Immich background jobs via API"
+          ansible.builtin.uri:
+            url: "http://localhost:2283/api/system-config"
+            method: PUT
+            body_format: json
+            body:
+              job:
+                backgroundTask:
+                  concurrency: 4
+                thumbnailGeneration:
+                  concurrency: 4
+                metadataExtraction:
+                  concurrency: 4
+            headers:
+              Content-Type: "application/json"
           register: immich_start_result
-          
-        - name: "Set Immich to high processing mode"
-          ansible.builtin.shell: |
-            cd {{ immich_compose_path }}
-            docker compose exec -T immich-server immich-cli config set JOB_CONCURRENCY 4
-          register: immich_config_result
           
         - name: "Log Immich processing start"
           ansible.builtin.debug:
@@ -46,16 +52,34 @@
       
     - name: "Stop Immich Processing Window"
       block:
-        - name: "Set Immich to low processing mode"
-          ansible.builtin.shell: |
-            cd {{ immich_compose_path }}
-            docker compose exec -T immich-server immich-cli config set JOB_CONCURRENCY 1
+        - name: "Set Immich to low processing mode via API"
+          ansible.builtin.uri:
+            url: "http://localhost:2283/api/system-config"
+            method: PUT
+            body_format: json
+            body:
+              job:
+                backgroundTask:
+                  concurrency: 1
+                thumbnailGeneration:
+                  concurrency: 1
+                metadataExtraction:
+                  concurrency: 1
+            headers:
+              Content-Type: "application/json"
           register: immich_low_result
           
-        - name: "Pause Immich background jobs"
-          ansible.builtin.shell: |
-            cd {{ immich_compose_path }}
-            docker compose exec -T immich-server immich-cli jobs pause all
+        - name: "Pause Immich background jobs via API"
+          ansible.builtin.uri:
+            url: "http://localhost:2283/api/system-config"
+            method: PUT
+            body_format: json
+            body:
+              job:
+                backgroundTask:
+                  concurrency: 0
+            headers:
+              Content-Type: "application/json"
           register: immich_pause_result
           
         - name: "Log Immich processing stop"
@@ -111,16 +135,17 @@
       when: action == "stop_photoprism"
 
     # =============================================================================
-    # MONITORING AND STATUS
+    # MONITORING AND STATUS (FIXED VERSION)
     # =============================================================================
     
     - name: "Check Processing Status"
       block:
-        - name: "Get Immich job status"
-          ansible.builtin.shell: |
-            cd {{ immich_compose_path }}
-            docker compose exec -T immich-server immich-cli jobs status
+        - name: "Get Immich server status via API"
+          ansible.builtin.uri:
+            url: "http://localhost:2283/api/server-info/ping"
+            method: GET
           register: immich_status
+          ignore_errors: yes
           
         - name: "Get PhotoPrism status"
           ansible.builtin.shell: |
@@ -132,12 +157,9 @@
           ansible.builtin.debug:
             msg: |
               📊 Current Processing Status:
-              Immich: {{ immich_status.stdout | default('Status unavailable') }}
+              Immich: {{ 'Online' if immich_status.status == 200 else 'Offline' }}
               PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
               Time: {{ ansible_date_time.time }}
-              
-      when: action == "status"
-
     # =============================================================================
     # CRON SCHEDULE MANAGEMENT
     # =============================================================================
