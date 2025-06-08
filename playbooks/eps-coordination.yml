@@ -17,7 +17,8 @@
     photoprism_processing_end: "10:55"
 
     # Network and API Configuration
-    immich_api_key: "DZ0bD4O3Q6xXRU1gCL89qO9boBdmZ86Xbpj8EXZdR8"  # Replace with your actual API key
+    #immich_api_key: "DZ0bD4O3Q6xXRU1gCL89qO9boBdmZ86Xbpj8EXZdR8"  # Replace with your actual API key
+    immich_api_key: "{{ immich_api_key }}"  # References the template variable
     immich_base_url: "http://192.168.50.130:2283"
 
     # Processing Control
