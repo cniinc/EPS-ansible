@@ -7,6 +7,4 @@ all:
           ansible_user: root
           ansible_port: 22
           
-          # EPS Specific Variables
-          immich_compose_path: "/opt/stacks/immich"
-          photoprism_compose_path: "/opt/stacks/photoprism"
+

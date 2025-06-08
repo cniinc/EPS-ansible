@@ -18,3 +18,7 @@ photoprism_workers: 4
 
 # Monitoring
 enable_detailed_logging: true
+
+# EPS Specific Variables
+immich_compose_path: "/opt/stacks/immich"
+photoprism_compose_path: "/opt/stacks/photoprism"
