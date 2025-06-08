@@ -149,53 +149,55 @@
       when: action == "stop_photoprism"
 
     # =============================================================================
-    # MONITORING AND STATUS (WITH NETWORK & AUTHENTICATION)
+    # MONITORING AND STATUS (SIMPLIFIED AND FIXED)
     # =============================================================================
     
     - name: "Check Processing Status"
       block:
-        - name: "Get Immich server status via API"
+        - name: "Test Immich API connectivity"
           ansible.builtin.uri:
-            url: "{{ immich_base_url }}/api/server-info"
+            url: "{{ immich_base_url }}/api/server-info/ping"
+            method: GET
+            timeout: 10
+          register: immich_ping
+          ignore_errors: yes
+          
+        - name: "Get Immich system config (requires auth)"
+          ansible.builtin.uri:
+            url: "{{ immich_base_url }}/api/system-config"
             method: GET
             headers:
               X-API-Key: "{{ immich_api_key }}"
             timeout: 10
-          register: immich_status
+          register: immich_config
           ignore_errors: yes
           
-        - name: "Get Immich job queue status"
-          ansible.builtin.uri:
-            url: "{{ immich_base_url }}/api/jobs"
-            method: GET
-            headers:
-              X-API-Key: "{{ immich_api_key }}"
-          register: immich_jobs_status
-          ignore_errors: yes
-          
-        - name: "Alternative Immich status check via container"
+        - name: "Get Immich container status"
           ansible.builtin.shell: |
             cd {{ immich_compose_path }}
-            docker compose ps immich-server --format "table {{.Status}}"
+            docker compose ps immich-server --format "table {{'{{'}}{{'.Name'}}{{'}}'}}\t{{'{{'}}{{'.Status'}}{{'}}'}}"
           register: immich_container_status
           ignore_errors: yes
           
-        - name: "Get PhotoPrism status"
+        - name: "Get PhotoPrism container status"
           ansible.builtin.shell: |
             cd {{ photoprism_compose_path }}
-            docker compose ps photoprism
+            docker compose ps photoprism --format "table {{'{{'}}{{'.Name'}}{{'}}'}}\t{{'{{'}}{{'.Status'}}{{'}}'}}"
           register: photoprism_status
+          ignore_errors: yes
           
         - name: "Display current processing status"
           ansible.builtin.debug:
             msg: |
               📊 Current Processing Status:
               
-              🎯 Immich API: {{ 'Online' if immich_status.status == 200 else 'Unreachable (' + (immich_status.status|string) + ')' if immich_status.status is defined else 'Connection Failed' }}
-              🎯 Immich Container: {{ 'Running' if 'Up' in immich_container_status.stdout else 'Stopped' }}
-              🎯 Immich Jobs: {{ 'Available' if immich_jobs_status.status == 200 else 'Unavailable' }}
-              📸 PhotoPrism: {{ 'Running' if 'Up' in photoprism_status.stdout else 'Stopped' }}
+              🎯 Immich Ping: {{ 'Success' if immich_ping.status is defined and immich_ping.status == 200 else 'Failed' }}
+              🎯 Immich API Auth: {{ 'Valid' if immich_config.status is defined and immich_config.status == 200 else 'Invalid API Key' }}
+              🎯 Immich Container: {{ 'Running' if immich_container_status.stdout is defined and 'Up' in immich_container_status.stdout else 'Unknown' }}
+              📸 PhotoPrism Container: {{ 'Running' if photoprism_status.stdout is defined and 'Up' in photoprism_status.stdout else 'Unknown' }}
               
+              🔑 API Key Status: {{ 'Configured' if immich_api_key != 'YOUR_ACTUAL_API_KEY_HERE' else 'NEEDS REPLACEMENT' }}
+              🌐 Target URL: {{ immich_base_url }}
               ⏰ Time: {{ ansible_date_time.time }}
               
       when: action == "status"
