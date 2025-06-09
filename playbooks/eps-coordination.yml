@@ -6,6 +6,11 @@
   hosts: photos #my LXC name
   become: yes
   vars:
+    # Template Variables Required:
+    # - action (string): Coordination action to perform
+    #   Valid options: status, start_immich, stop_immich, start_photoprism, stop_photoprism, schedule, cleanup
+    # - immich_api_key (string): API key for Immich authentication (from Semaphore template variable)
+    
     # Docker Compose Paths
     immich_compose_path: "/opt/stacks/immich"
     photoprism_compose_path: "/opt/stacks/photoprism"
@@ -21,10 +26,67 @@
     immich_api_key: "{{ immich_api_key }}"  # References the template variable
     immich_base_url: "http://192.168.50.130:2283"
 
-    # Processing Control
-    action: "{{ action | default('status') }}"  # Options: status, start_immich, stop_immich, start_photoprism, stop_photoprism, schedule, cleanup
+    # Valid action list for validation
+    valid_actions:
+      - status
+      - start_immich
+      - stop_immich
+      - start_photoprism
+      - stop_photoprism
+      - schedule
+      - cleanup
 
   tasks:
+    # =============================================================================
+    # INPUT VALIDATION
+    # =============================================================================
+    
+    - name: "Validate required variables"
+      block:
+        - name: "Check if action variable is defined"
+          ansible.builtin.fail:
+            msg: |
+              ERROR: 'action' variable is required but not provided.
+              
+              This playbook requires an 'action' variable to determine which coordination task to perform.
+              
+              Valid actions:
+              • status - Check current system status
+              • start_immich - Enable high Immich processing
+              • stop_immich - Set low Immich processing  
+              • start_photoprism - Start PhotoPrism indexing
+              • stop_photoprism - Stop PhotoPrism processing
+              • schedule - Show schedule setup instructions
+              • cleanup - Show cleanup instructions
+              
+              Usage examples:
+              • Semaphore: Set 'action' in template environment variables
+              • Command line: ansible-playbook playbook.yml -e "action=status"
+          when: action is not defined
+          
+        - name: "Validate action value"
+          ansible.builtin.fail:
+            msg: |
+              ERROR: Invalid action '{{ action }}' provided.
+              
+              Valid actions are: {{ valid_actions | join(', ') }}
+              
+              You provided: '{{ action }}'
+          when: action not in valid_actions
+          
+        - name: "Check if API key is configured"
+          ansible.builtin.fail:
+            msg: |
+              ERROR: 'immich_api_key' variable is required but not configured.
+              
+              This variable should be set in your Semaphore template variables.
+              The API key is needed to control Immich processing via REST API.
+          when: immich_api_key is not defined or immich_api_key == ""
+          
+        - name: "Display coordination action"
+          ansible.builtin.debug:
+            msg: "🎯 Operation EPS Coordination - Action: {{ action }}"
+
     # =============================================================================
     # IMMICH PROCESSING CONTROL (USING JOB ENDPOINTS)
     # =============================================================================
@@ -249,7 +311,7 @@
 # │   ├── Peak mobile usage time coverage
 # │   ├── Quick thumbnail generation
 # │   └── Video conversion (2 workers)
-# └── PhotoPrism: 1:05 PM - 10:55 AM (22h 50m)
+# └── PhotoPrism: 1:10 PM - 10:50 AM (22h 50m)
 #     ├── Intensive AI processing
 #     ├── Facial recognition and object detection  
 #     ├── Metadata generation and indexing
