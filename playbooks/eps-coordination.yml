@@ -43,12 +43,12 @@
     
     - name: "Validate required variables"
       block:
-        - name: "Check if action variable is defined"
-          ansible.builtin.fail:
+        - name: "Check if action variable is defined, set default if not"
+          ansible.builtin.debug:
             msg: |
-              ERROR: 'action' variable is required but not provided.
+              WARNING: 'action' variable is required but not provided.
               
-              This playbook requires an 'action' variable to determine which coordination task to perform.
+              This playbook requires an 'action' variable to determine which coordination task to perform. For now, will set to 'status'.
               
               Valid actions:
               • status - Check current system status
@@ -62,7 +62,15 @@
               Usage examples:
               • Semaphore: Set 'action' in template environment variables
               • Command line: ansible-playbook playbook.yml -e "action=status"
+
+        - name: "Set default action"
+          ansible.builtin.set_fact:
+            action: "status"
           when: action is not defined
+          
+        - name: "Display coordination action"
+          ansible.builtin.debug:
+            msg: "🎯 Operation EPS Coordination - Action: {{ action }}"
           
         - name: "Validate action value"
           ansible.builtin.fail:
@@ -83,9 +91,7 @@
               The API key is needed to control Immich processing via REST API.
           when: immich_api_key is not defined or immich_api_key == ""
           
-        - name: "Display coordination action"
-          ansible.builtin.debug:
-            msg: "🎯 Operation EPS Coordination - Action: {{ action }}"
+
 
     # =============================================================================
     # IMMICH PROCESSING CONTROL (USING JOB ENDPOINTS)
