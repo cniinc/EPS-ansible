@@ -43,7 +43,7 @@
       ansible.builtin.debug:
         msg: |
           All variables: {{ vars }}
-          Action variable: {{ action | default('NOT_SET') }}
+          Action variable: {{ action }}
           Action defined: {{ action is defined }}
 
     - name: "Validate required variables"
