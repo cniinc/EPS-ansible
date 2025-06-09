@@ -39,6 +39,13 @@
     # INPUT VALIDATION
     # =============================================================================
     
+    - name: "Debug all variables"
+      ansible.builtin.debug:
+        msg: |
+          All variables: {{ vars }}
+          Action variable: {{ action | default('NOT_SET') }}
+          Action defined: {{ action is defined }}
+
     - name: "Validate required variables"
       block:
         - name: "Check if action variable is defined, set default if not"
