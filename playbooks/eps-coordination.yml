@@ -33,7 +33,7 @@
       - stop_photoprism
       - schedule
       - cleanup
-    _action: "{{ action }}"
+    
 
   tasks:
     # =============================================================================
@@ -44,7 +44,7 @@
       block:
         - name: "Display coordination action"
           ansible.builtin.debug:
-            msg: "🎯 Operation EPS Coordination - Action: {{ _action }}"
+            msg: "🎯 Operation EPS Coordination - Action: {{ action }}"
           
         - name: "Validate action value"
           ansible.builtin.fail:
