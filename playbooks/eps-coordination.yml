@@ -54,7 +54,7 @@
               Valid actions are: {{ valid_actions | join(', ') }}
               
               You provided: '{{ action }}'
-          when: _action not in valid_actions
+          when: action not in valid_actions
           
         - name: "Check if API key is configured"
           ansible.builtin.fail:
