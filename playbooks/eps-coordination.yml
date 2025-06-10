@@ -33,7 +33,7 @@
       - stop_photoprism
       - schedule
       - cleanup
-    action: 'status'
+    #action: 'status' #this probably does nothing
 
   tasks:
     # =============================================================================
