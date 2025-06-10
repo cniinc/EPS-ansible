@@ -33,7 +33,7 @@
       - stop_photoprism
       - schedule
       - cleanup
-    action: "{{ action }}"
+    _action: "{{ action }}"
 
   tasks:
     # =============================================================================
@@ -54,7 +54,7 @@
               Valid actions are: {{ valid_actions | join(', ') }}
               
               You provided: '{{ action }}'
-          when: action not in valid_actions
+          when: _action not in valid_actions
           
         - name: "Check if API key is configured"
           ansible.builtin.fail:
