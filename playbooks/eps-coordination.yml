@@ -38,13 +38,6 @@
     # =============================================================================
     # INPUT VALIDATION
     # =============================================================================
-    
-    - name: "Debug all variables"
-      ansible.builtin.debug:
-        msg: |
-          All variables: {{ vars }}
-          Action variable: {{ action }}
-          Action defined: {{ action is defined }}
 
     - name: "Validate required variables"
       block:
