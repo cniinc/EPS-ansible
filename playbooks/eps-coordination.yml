@@ -44,7 +44,7 @@
       block:
         - name: "Display coordination action"
           ansible.builtin.debug:
-            msg: "🎯 Operation EPS Coordination - Action: {{ action }}"
+            msg: "🎯 Operation EPS Coordination - Action: {{ _action }}"
           
         - name: "Validate action value"
           ansible.builtin.fail:
